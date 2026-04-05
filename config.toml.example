@@ -1,0 +1,8 @@
+token = "YOUR_BOT_TOKEN"
+# Long polling timeout for getUpdates (1–50 seconds). Optional; default 30.
+poll_timeout = 30
+
+# Optional: POST each Update as JSON (same as Telegram webhook). Empty = no forwarding.
+# webhook_url = "http://127.0.0.1:8080/telegram/webhook"
+# Optional header X-Telegram-Bot-Api-Secret-Token when set.
+# webhook_secret = "your-secret"
