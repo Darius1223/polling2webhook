@@ -1,5 +1,9 @@
 # polling2webhook
 
+[![CI](https://github.com/Darius1223/polling2webhook/actions/workflows/ci.yml/badge.svg)](https://github.com/Darius1223/polling2webhook/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Darius1223/polling2webhook/graph/badge.svg)](https://codecov.io/gh/Darius1223/polling2webhook)
+[![Go](https://img.shields.io/github/go-mod/go-version/Darius1223/polling2webhook?label=go&logo=go)](go.mod)
+
 Long polling bridge for the [Telegram Bot API](https://core.telegram.org/bots/api): reads updates via `getUpdates` and **POSTs each update as JSON** to your HTTP endpoint, matching the payload shape of the official **webhook** delivery (single `Update` object per request, `Content-Type: application/json`). Optional secret header `X-Telegram-Bot-Api-Secret-Token` is supported.
 
 Use this when your consumer only speaks “webhook” (e.g. local integration) but you do not expose a public HTTPS URL to Telegram.
@@ -79,4 +83,11 @@ The image entrypoint passes `-config /config/config.toml` by default (see [`Dock
 
 ## CI
 
-GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `go vet` and `go test -race`.
+GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `go vet`, `go test -race` with a coverage profile, and uploads reports to [Codecov](https://codecov.io/gh/Darius1223/polling2webhook) (add the repo on Codecov and optional `CODECOV_TOKEN` secret if the coverage badge does not update).
+
+To see coverage locally:
+
+```bash
+go test ./... -coverprofile=coverage.out -covermode=atomic
+go tool cover -func=coverage.out
+```
