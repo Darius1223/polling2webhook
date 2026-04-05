@@ -103,6 +103,61 @@ poll_timeout = 99`)
 	}
 }
 
+func TestLoad_invalidTOML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.toml")
+	if err := os.WriteFile(path, []byte(`token = [`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "parse") {
+		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestLoad_validWebhookURL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.toml")
+	content := `token = "t"
+webhook_url = "https://example.com/hook"
+poll_timeout = 15
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebhookURL != "https://example.com/hook" {
+		t.Fatalf("webhook_url: %q", cfg.WebhookURL)
+	}
+	if cfg.PollTimeout != 15 {
+		t.Fatalf("poll_timeout: %d", cfg.PollTimeout)
+	}
+}
+
+func TestLoad_webhookSecretTrimmed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.toml")
+	content := `token = "t"
+webhook_secret = "  ab c  "
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebhookSecret != "ab c" {
+		t.Fatalf("secret: %q", cfg.WebhookSecret)
+	}
+}
+
 func TestRedactedLogArgs_noRawToken(t *testing.T) {
 	secret := "super-secret-token-value-12345"
 	cfg := Config{

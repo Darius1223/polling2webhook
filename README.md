@@ -81,6 +81,23 @@ docker run --rm -v "$(pwd)/config.toml:/config/config.toml:ro" polling2webhook
 
 The image entrypoint passes `-config /config/config.toml` by default (see [`Dockerfile`](Dockerfile)).
 
+## Releases (Windows `.exe`)
+
+Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) builds **Windows amd64** `polling2webhook.exe` and attaches it to a [GitHub Release](https://github.com/Darius1223/polling2webhook/releases) when you push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+You can also run the workflow manually from the **Actions** tab (`workflow_dispatch`).
+
+Local cross-compile from macOS/Linux:
+
+```bash
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o polling2webhook.exe .
+```
+
 ## CI
 
 GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `go vet`, `go test -race` with a coverage profile, and uploads reports to [Codecov](https://codecov.io/gh/Darius1223/polling2webhook) (add the repo on Codecov and optional `CODECOV_TOKEN` secret if the coverage badge does not update).

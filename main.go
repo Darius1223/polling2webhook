@@ -15,13 +15,25 @@ import (
 	"polling2webhook/internal/telegram"
 )
 
+// newTelegramClient is swappable in tests (e.g. to inject APIBaseURL via httptest).
+var newTelegramClient = defaultNewTelegramClient
+
+func defaultNewTelegramClient(log *slog.Logger, cfg config.Config) *telegram.Client {
+	return telegram.New(log, telegram.Options{
+		Token:         cfg.Token,
+		PollTimeout:   cfg.PollTimeout,
+		WebhookURL:    cfg.WebhookURL,
+		WebhookSecret: cfg.WebhookSecret,
+	})
+}
+
 func main() {
 	configPath := flag.String("config", "config.toml", "path to TOML config file")
 	logFormat := flag.String("log", "text", "log format: text or json")
 	logLevelStr := flag.String("log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
 
-	os.Exit(run(*configPath, *logFormat, *logLevelStr))
+	os.Exit(run(context.Background(), *configPath, *logFormat, *logLevelStr))
 }
 
 func parseLogLevel(s string) (slog.Level, error) {
@@ -39,7 +51,7 @@ func parseLogLevel(s string) (slog.Level, error) {
 	}
 }
 
-func run(cfgPath, logFormat, logLevelStr string) int {
+func run(parent context.Context, cfgPath, logFormat, logLevelStr string) int {
 	lvl, err := parseLogLevel(logLevelStr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -68,15 +80,10 @@ func run(cfgPath, logFormat, logLevelStr string) int {
 	logArgs := append([]any{"config_path", cfgPath}, cfg.RedactedLogArgs()...)
 	logger.Info("config loaded", logArgs...)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	client := telegram.New(logger, telegram.Options{
-		Token:         cfg.Token,
-		PollTimeout:   cfg.PollTimeout,
-		WebhookURL:    cfg.WebhookURL,
-		WebhookSecret: cfg.WebhookSecret,
-	})
+	client := newTelegramClient(logger, cfg)
 	if err := client.GetMe(ctx); err != nil {
 		logger.Error("getMe", "err", err)
 		return 1

@@ -30,6 +30,8 @@ type Options struct {
 	// APIBaseURL is the URL prefix before the bot token (default https://api.telegram.org/bot).
 	// For example, in tests point this at httptest.Server URL with a "/bot" suffix. Leave empty in production.
 	APIBaseURL string
+	// ForwardMaxAttempts is the webhook POST retry count (0 = default 5).
+	ForwardMaxAttempts int
 }
 
 type Client struct {
@@ -42,6 +44,7 @@ type Client struct {
 	webhookURL    string
 	webhookSecret string
 	offset        int64
+	forwardMax    int
 }
 
 func New(log *slog.Logger, opt Options) *Client {
@@ -56,6 +59,10 @@ func New(log *slog.Logger, opt Options) *Client {
 	if base == "" {
 		base = defaultBaseURL
 	}
+	fwdMax := opt.ForwardMaxAttempts
+	if fwdMax <= 0 {
+		fwdMax = maxForwardAttempts
+	}
 	return &Client{
 		log: log,
 		httpClient: &http.Client{
@@ -69,6 +76,7 @@ func New(log *slog.Logger, opt Options) *Client {
 		pollTimeout:   pollTimeout,
 		webhookURL:    opt.WebhookURL,
 		webhookSecret: opt.WebhookSecret,
+		forwardMax:    fwdMax,
 	}
 }
 
@@ -211,7 +219,8 @@ func (c *Client) forwardOnce(ctx context.Context, updateJSON []byte) error {
 func (c *Client) forwardUpdate(ctx context.Context, updateJSON []byte, updateID int64) error {
 	wait := time.Second
 	var lastErr error
-	for attempt := 1; attempt <= maxForwardAttempts; attempt++ {
+	max := c.forwardMax
+	for attempt := 1; attempt <= max; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -224,8 +233,8 @@ func (c *Client) forwardUpdate(ctx context.Context, updateJSON []byte, updateID 
 			return ctx.Err()
 		}
 		c.log.Warn("webhook forward failed", "update_id", updateID, "attempt", attempt, "err", err)
-		if attempt == maxForwardAttempts {
-			return fmt.Errorf("webhook forward update_id=%d after %d attempts: %w", updateID, maxForwardAttempts, lastErr)
+		if attempt == max {
+			return fmt.Errorf("webhook forward update_id=%d after %d attempts: %w", updateID, max, lastErr)
 		}
 		if !sleepCtx(ctx, wait) {
 			return ctx.Err()
