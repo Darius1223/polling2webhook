@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
+
+var webhookSecretRe = regexp.MustCompile(`^[A-Za-z0-9_\-]{1,256}$`)
 
 type Config struct {
 	Token         string `toml:"token"`
@@ -52,6 +55,10 @@ func Load(path string) (Config, error) {
 		if u.Host == "" {
 			return Config{}, fmt.Errorf("parse config %q: webhook_url must include host", path)
 		}
+	}
+
+	if cfg.WebhookSecret != "" && !webhookSecretRe.MatchString(cfg.WebhookSecret) {
+		return Config{}, fmt.Errorf("parse config %q: webhook_secret must be 1–256 chars from A-Za-z0-9_-", path)
 	}
 
 	return cfg, nil

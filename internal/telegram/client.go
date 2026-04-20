@@ -32,19 +32,27 @@ type Options struct {
 	APIBaseURL string
 	// ForwardMaxAttempts is the webhook POST retry count (0 = default 5).
 	ForwardMaxAttempts int
+	// RetryBaseWait is the initial backoff duration for getUpdates retries (0 = default 1s).
+	// Intended for tests only — leave unset in production.
+	RetryBaseWait time.Duration
+	// ForwardRetryBaseWait is the initial backoff for webhook forward retries (0 = default 1s).
+	// Intended for tests only — leave unset in production.
+	ForwardRetryBaseWait time.Duration
 }
 
 type Client struct {
-	log           *slog.Logger
-	httpClient    *http.Client
-	forwardClient *http.Client
-	baseURL       string
-	token         string
-	pollTimeout   int
-	webhookURL    string
-	webhookSecret string
-	offset        int64
-	forwardMax    int
+	log                  *slog.Logger
+	httpClient           *http.Client
+	forwardClient        *http.Client
+	baseURL              string
+	token                string
+	pollTimeout          int
+	webhookURL           string
+	webhookSecret        string
+	offset               int64
+	forwardMax           int
+	retryBaseWait        time.Duration
+	forwardRetryBaseWait time.Duration
 }
 
 func New(log *slog.Logger, opt Options) *Client {
@@ -63,6 +71,14 @@ func New(log *slog.Logger, opt Options) *Client {
 	if fwdMax <= 0 {
 		fwdMax = maxForwardAttempts
 	}
+	retryBase := opt.RetryBaseWait
+	if retryBase <= 0 {
+		retryBase = time.Second
+	}
+	fwdRetryBase := opt.ForwardRetryBaseWait
+	if fwdRetryBase <= 0 {
+		fwdRetryBase = time.Second
+	}
 	return &Client{
 		log: log,
 		httpClient: &http.Client{
@@ -76,7 +92,9 @@ func New(log *slog.Logger, opt Options) *Client {
 		pollTimeout:   pollTimeout,
 		webhookURL:    opt.WebhookURL,
 		webhookSecret: opt.WebhookSecret,
-		forwardMax:    fwdMax,
+		forwardMax:           fwdMax,
+		retryBaseWait:        retryBase,
+		forwardRetryBaseWait: fwdRetryBase,
 	}
 }
 
@@ -217,7 +235,8 @@ func (c *Client) forwardOnce(ctx context.Context, updateJSON []byte) error {
 }
 
 func (c *Client) forwardUpdate(ctx context.Context, updateJSON []byte, updateID int64) error {
-	wait := time.Second
+	wait := c.forwardRetryBaseWait
+	maxWait := 16 * c.forwardRetryBaseWait
 	var lastErr error
 	max := c.forwardMax
 	for attempt := 1; attempt <= max; attempt++ {
@@ -239,7 +258,7 @@ func (c *Client) forwardUpdate(ctx context.Context, updateJSON []byte, updateID 
 		if !sleepCtx(ctx, wait) {
 			return ctx.Err()
 		}
-		if wait < 16*time.Second {
+		if wait < maxWait {
 			wait *= 2
 		}
 	}
@@ -248,7 +267,7 @@ func (c *Client) forwardUpdate(ctx context.Context, updateJSON []byte, updateID 
 
 // PollUpdates long-polls getUpdates until ctx is cancelled.
 func (c *Client) PollUpdates(ctx context.Context) error {
-	backoff := time.Second
+	backoff := c.retryBaseWait
 	for {
 		select {
 		case <-ctx.Done():
@@ -284,14 +303,14 @@ func (c *Client) PollUpdates(ctx context.Context) error {
 		var gr getUpdatesResponse
 		if err := json.Unmarshal(body, &gr); err != nil {
 			c.log.Error("getUpdates JSON decode", "err", err, "body_snip", truncate(string(body), 200))
-			if !sleepCtx(ctx, time.Second) {
+			if !sleepCtx(ctx, c.retryBaseWait) {
 				return ctx.Err()
 			}
 			continue
 		}
 		if !gr.OK {
 			c.log.Warn("getUpdates ok=false", "body_snip", truncate(string(body), 300))
-			if !sleepCtx(ctx, time.Second) {
+			if !sleepCtx(ctx, c.retryBaseWait) {
 				return ctx.Err()
 			}
 			continue
@@ -301,13 +320,16 @@ func (c *Client) PollUpdates(ctx context.Context) error {
 		for _, raw := range gr.Result {
 			id, err := parseUpdateID(raw)
 			if err != nil {
-				return fmt.Errorf("getUpdates: invalid update: %w", err)
+				c.log.Warn("getUpdates: skipping invalid update", "err", err, "raw", truncate(string(raw), 200))
+				continue
 			}
 			items = append(items, updateItem{id: id, raw: append(json.RawMessage(nil), raw...)})
 		}
 		sort.Slice(items, func(i, j int) bool { return items[i].id < items[j].id })
 
-		c.log.Info("updates batch", "count", len(items))
+		if len(items) > 0 {
+			c.log.Info("updates batch", "count", len(items))
+		}
 
 		for _, item := range items {
 			if c.webhookURL != "" {
@@ -321,5 +343,6 @@ func (c *Client) PollUpdates(ctx context.Context) error {
 		if len(items) > 0 {
 			c.log.Debug("updates raw batch", "payload", string(body))
 		}
+
 	}
 }

@@ -72,6 +72,25 @@ webhook_url = "ftp://example.com/hook"
 	}
 }
 
+func TestLoad_webhookURLEmptyHost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.toml")
+	// "https:///path" parses successfully (scheme=https) but has an empty host.
+	content := `token = "x"
+webhook_url = "https:///webhook"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for empty host")
+	}
+	if !strings.Contains(err.Error(), "webhook_url") {
+		t.Fatalf("error: %v", err)
+	}
+}
+
 func TestLoad_pollTimeoutClamp(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cfg.toml")
@@ -144,7 +163,7 @@ func TestLoad_webhookSecretTrimmed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "c.toml")
 	content := `token = "t"
-webhook_secret = "  ab c  "
+webhook_secret = "  abc123  "
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -153,8 +172,26 @@ webhook_secret = "  ab c  "
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.WebhookSecret != "ab c" {
+	if cfg.WebhookSecret != "abc123" {
 		t.Fatalf("secret: %q", cfg.WebhookSecret)
+	}
+}
+
+func TestLoad_invalidWebhookSecret(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.toml")
+	content := `token = "t"
+webhook_secret = "invalid secret with spaces"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for invalid webhook_secret")
+	}
+	if !strings.Contains(err.Error(), "webhook_secret") {
+		t.Fatalf("error: %v", err)
 	}
 }
 
